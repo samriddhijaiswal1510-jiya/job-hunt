@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+
+# Database (regenerated on startup)
+backend/jobs.db
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Seed script (dev only)
+backend/seed_jobs.py
