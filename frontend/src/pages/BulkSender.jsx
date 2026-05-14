@@ -4,8 +4,10 @@ import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../context/ToastContext';
 
+const API = 'http://127.0.0.1:5000/api';
+
 export default function BulkSender() {
-  const [template, setTemplate] = useState('Hello {{name}},\n\nI am interested in the {{role}} position at {{company}}.\n\nBest regards,\nJobHunter');
+  const [template, setTemplate] = useState('Hello {name},\n\nI am interested in the {role} position at {company}.\n\nBest regards,\nJobHunter');
   const [recipients, setRecipients] = useState([
     { name: 'John Smith', company: 'Google', role: 'Frontend Developer', email: 'john@google.com', status: 'Ready' },
     { name: 'Alice Wong', company: 'Meta', role: 'Product Designer', email: 'alice@meta.com', status: 'Ready' },
@@ -13,6 +15,7 @@ export default function BulkSender() {
   ]);
   const [selectedRecipientIdx, setSelectedRecipientIdx] = useState(0);
   const [sending, setSending] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
   const { addToast } = useToast();
 
   // Dynamic Variable Replacement logic
@@ -21,26 +24,42 @@ export default function BulkSender() {
     if (!person) return template;
     
     let text = template;
-    text = text.replace(/{{name}}/g, person.name);
-    text = text.replace(/{{company}}/g, person.company);
-    text = text.replace(/{{role}}/g, person.role);
+    text = text.replace(/{name}/g, person.name);
+    text = text.replace(/{company}/g, person.company);
+    text = text.replace(/{role}/g, person.role);
     return text;
   }, [template, recipients, selectedRecipientIdx]);
 
   const handleSendAll = async () => {
+    if (recipients.length === 0) {
+      addToast('No recipients to send to', 'error');
+      return;
+    }
     setSending(true);
     addToast('Starting bulk send process...');
     
     try {
-      // Simulate backend delay and personalized sending
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const res = await axios.post(`${API}/send-emails`, {
+        recipients,
+        template,
+        subject: "Application for {role} at {company}",
+        delay: 2,
+        is_test: false
+      });
       
-      // Update statuses locally
-      setRecipients(prev => prev.map(r => ({ ...r, status: 'Sent' })));
-      addToast('Bulk send completed successfully!');
+      // Update statuses locally based on report
+      const reportMap = {};
+      res.data.report.forEach(r => reportMap[r.recipient] = r.status);
+      
+      setRecipients(prev => prev.map(r => ({ 
+        ...r, 
+        status: reportMap[r.email] || 'Failed' 
+      })));
+      
+      addToast(`Bulk send completed! Sent: ${res.data.sent}, Failed: ${res.data.failed}`);
     } catch (err) {
       console.error(err);
-      addToast('Critical SMTP Failure: Check settings', 'error');
+      addToast(err.response?.data?.error || 'Critical SMTP Failure', 'error');
     } finally {
       setSending(false);
     }
@@ -49,8 +68,32 @@ export default function BulkSender() {
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (file && file.name.endsWith('.csv')) {
-      addToast('CSV parsing started...');
-      // Placeholder for CSV parsing logic
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target.result;
+        const lines = text.split('\n');
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+        
+        const data = lines.slice(1).filter(line => line.trim()).map(line => {
+          const values = line.split(',').map(v => v.trim());
+          const entry = {};
+          headers.forEach((h, i) => {
+            entry[h] = values[i];
+          });
+          return {
+            name: entry.name || 'Candidate',
+            company: entry.company || 'Company',
+            role: entry.role || 'Position',
+            email: entry.email || '',
+            status: 'Ready'
+          };
+        }).filter(r => r.email);
+        
+        setRecipients(data);
+        setShowUploadModal(true);
+        addToast(`Imported ${data.length} contacts from CSV`);
+      };
+      reader.readAsText(file);
     } else {
       addToast('Invalid file format. Please upload a CSV.', 'error');
     }
@@ -93,7 +136,7 @@ export default function BulkSender() {
           <div className="mb-lg flex justify-between items-end">
             <h3 className="font-headline-md text-on-surface">Email Template</h3>
             <div className="flex gap-xs">
-              {['{{name}}', '{{company}}', '{{role}}'].map(v => (
+              {['{name}', '{company}', '{role}'].map(v => (
                 <button 
                   key={v}
                   onClick={() => setTemplate(t => t + v)}
@@ -158,7 +201,7 @@ export default function BulkSender() {
                       </div>
                       <span className={clsx(
                         "text-[9px] font-bold uppercase px-sm py-1 rounded-full",
-                        person.status === 'Sent' ? "bg-green-500/10 text-green-400" : "bg-surface-container-highest text-on-surface-variant"
+                        person.status === 'Success' ? "bg-green-500/10 text-green-400" : "bg-surface-container-highest text-on-surface-variant"
                       )}>
                         {person.status}
                       </span>
@@ -170,6 +213,34 @@ export default function BulkSender() {
           </div>
         </section>
       </main>
+
+      {/* Upload Success Modal */}
+      <AnimatePresence>
+        {showUploadModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-surface-container border border-outline-variant p-xl rounded-3xl max-w-sm w-full shadow-2xl text-center"
+            >
+              <div className="w-20 h-20 bg-primary/10 text-primary rounded-full flex items-center justify-center mx-auto mb-lg">
+                <span className="material-symbols-outlined text-[40px]">task_alt</span>
+              </div>
+              <h3 className="font-headline-md text-on-surface mb-sm">CSV Imported!</h3>
+              <p className="text-on-surface-variant mb-xl">
+                We found <span className="font-bold text-primary">{recipients.length}</span> valid contacts in your file. They are ready for outreach!
+              </p>
+              <button 
+                onClick={() => setShowUploadModal(false)}
+                className="w-full bg-primary text-on-primary py-md rounded-2xl font-bold hover:scale-[1.02] active:scale-95 transition-all"
+              >
+                GOT IT
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

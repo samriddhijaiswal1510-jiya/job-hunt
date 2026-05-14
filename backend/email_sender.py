@@ -15,14 +15,20 @@ def send_personalized_email(smtp_settings, recipient, subject, body, attachment_
         msg = MIMEMultipart()
         msg['From'] = smtp_settings['email']
         msg['To'] = recipient['email']
-        msg['Subject'] = subject.format(**recipient)
         
-        # Personalize body
-        personalized_body = body.format(**recipient)
+        # Safe formatting for subject and body
+        try:
+            msg['Subject'] = subject.format(**recipient)
+            personalized_body = body.format(**recipient)
+        except KeyError as e:
+            return False, f"Missing template variable: {str(e)}"
+        except Exception as e:
+            return False, f"Template error: {str(e)}"
+            
         msg.attach(MIMEText(personalized_body, 'plain'))
         
         # Attachment
-        if attachment_path and os.path.exists(attachment_path):
+        if attachment_path and isinstance(attachment_path, str) and os.path.exists(attachment_path):
             with open(attachment_path, "rb") as attachment:
                 part = MIMEBase("application", "octet-stream")
                 part.set_payload(attachment.read())

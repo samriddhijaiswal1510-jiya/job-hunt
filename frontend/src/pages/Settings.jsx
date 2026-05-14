@@ -73,6 +73,42 @@ export default function Settings() {
 
         <div className="bg-surface-container border border-outline-variant p-lg rounded-2xl shadow-sm">
           <h3 className="text-xl font-bold text-on-surface mb-6 flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary">description</span> Default Resume
+          </h3>
+          <div className="space-y-4">
+            <p className="text-on-surface-variant text-sm italic">
+              Currently using: {settings.default_resume_path ? settings.default_resume_path.split('\\').pop().split('/').pop() : 'No resume uploaded'}
+            </p>
+            <div className="flex items-center gap-4">
+              <label className="bg-surface-container-highest hover:bg-primary/10 text-primary px-6 py-3 rounded-xl font-bold cursor-pointer transition-all border border-primary/20 flex items-center gap-2">
+                <span className="material-symbols-outlined">upload</span>
+                Upload New Resume (PDF)
+                <input 
+                  type="file" 
+                  className="hidden" 
+                  accept=".pdf" 
+                  onChange={async (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      const formData = new FormData();
+                      formData.append('resume', file);
+                      try {
+                        const res = await axios.post('http://localhost:5000/api/upload-resume', formData);
+                        setSettings({...settings, default_resume_path: res.data.path});
+                        addToast('Resume uploaded successfully!');
+                      } catch (err) {
+                        addToast('Failed to upload resume', 'error');
+                      }
+                    }
+                  }} 
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-surface-container border border-outline-variant p-lg rounded-2xl shadow-sm">
+          <h3 className="text-xl font-bold text-on-surface mb-6 flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">shield</span> Email SMTP (Gmail)
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -99,7 +135,22 @@ export default function Settings() {
           </div>
         </div>
 
-        <div className="flex justify-end pt-4">
+        <div className="flex justify-end gap-4 pt-4">
+          <button 
+            onClick={async () => {
+              try {
+                addToast('Testing connection...');
+                const res = await axios.post('http://localhost:5000/api/test-smtp');
+                addToast(res.data.message);
+              } catch (err) {
+                addToast(err.response?.data?.error || 'Connection Failed', 'error');
+              }
+            }}
+            className="bg-surface-container-highest text-primary font-bold px-xl py-md rounded-2xl flex items-center gap-3 border border-primary/20 hover:bg-primary/10 transition-all"
+          >
+            <span className="material-symbols-outlined">key_visualizer</span>
+            TEST CONNECTION
+          </button>
           <button 
             onClick={handleSave}
             className="bg-primary text-on-primary font-bold px-xl py-md rounded-2xl flex items-center gap-3 hover:scale-[1.02] active:scale-95 transition-all shadow-lg"

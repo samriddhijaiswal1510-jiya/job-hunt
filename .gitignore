@@ -24,4 +24,7 @@ backend/jobs.db
 Thumbs.db
 
 # Seed script (dev only)
-backend/seed_jobs.py
+# Test & Uploads
+backend/uploads/
+test_contacts.csv
+.env.example

@@ -33,6 +33,11 @@ Your personal job-hunting command center. Build with React, Flask, and SQLite.
    ```
    The frontend will run on `http://localhost:5173`.
 
+### 3. Features Setup
+1.  **Resume:** Go to **Settings** and upload your PDF resume. It will be stored in `backend/uploads/`.
+2.  **SMTP:** Go to **Settings** and enter your Gmail and App Password.
+3.  **Bulk Send:** Upload a CSV in the **Bulk Sender** page. Your CSV should have headers: `name, company, role, email`.
+
 ---
 
 ## 📝 Resume Bullet Points (3 Options)

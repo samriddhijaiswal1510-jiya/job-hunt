@@ -93,22 +93,113 @@ def get_stats():
         "status_breakdown": status_breakdown
     })
 
+@app.route('/api/upload-resume', methods=['POST'])
+def upload_resume():
+    if 'resume' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    file = request.files['resume']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+    
+    # Save to a dedicated uploads folder
+    upload_dir = os.path.join(os.getcwd(), 'uploads')
+    if not os.path.exists(upload_dir):
+        os.makedirs(upload_dir)
+    
+    filepath = os.path.join(upload_dir, file.filename)
+    file.save(filepath)
+    
+    # Update settings with the new path
+    conn = get_db_connection()
+    conn.execute('UPDATE settings SET default_resume_path=? WHERE id=1', (filepath,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"message": "Resume uploaded successfully", "path": filepath})
+
 @app.route('/api/send-emails', methods=['POST'])
 def send_bulk_emails():
-    # This would take CSV, template, and settings
-    # For now, placeholder for the logic
-    data = request.form
-    # attachment = request.files.get('resume')
+    data = request.json
+    recipients = data.get('recipients', [])
+    template = data.get('template', '')
+    subject = data.get('subject', 'Application for {role}')
+    delay = int(data.get('delay', 2))
+    is_test = data.get('is_test', False)
     
-    # Mock response
+    # Get SMTP settings
+    conn = get_db_connection()
+    settings = conn.execute('SELECT * FROM settings WHERE id=1').fetchone()
+    conn.close()
+    
+    if not settings or not settings['smtp_email'] or not settings['smtp_password']:
+        return jsonify({"error": "SMTP settings not configured"}), 400
+    
+    smtp_settings = {
+        "email": settings['smtp_email'],
+        "password": settings['smtp_password']
+    }
+    
+    resume_path = settings['default_resume_path']
+    
+    # Call the real bulk_send logic
+    try:
+        results = bulk_send(
+            smtp_settings, 
+            recipients, 
+            subject, 
+            template, 
+            resume_path, 
+            delay=delay, 
+            is_test=is_test
+        )
+    except Exception as e:
+        print(f"CRITICAL ERROR IN BULK SEND: {str(e)}")
+        return jsonify({"error": f"Server Error: {str(e)}"}), 500
+    
+    # Log to emails_sent table
+    conn = get_db_connection()
+    for res in results:
+        conn.execute('''
+            INSERT INTO emails_sent (recipient, status, sent_at)
+            VALUES (?, ?, ?)
+        ''', (res['recipient'], res['status'], datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    conn.commit()
+    conn.close()
+    
     return jsonify({
-        "sent": 10,
-        "failed": 2,
-        "report": [
-            {"recipient": "hr@google.com", "status": "Success"},
-            {"recipient": "jobs@meta.com", "status": "Failed", "error": "Invalid email"}
-        ]
+        "sent": len([r for r in results if r['status'] == 'Success']),
+        "failed": len([r for r in results if r['status'] != 'Success']),
+        "report": results
     })
+
+@app.route('/api/test-smtp', methods=['POST'])
+def test_smtp():
+    conn = get_db_connection()
+    settings = conn.execute('SELECT * FROM settings WHERE id=1').fetchone()
+    conn.close()
+    
+    if not settings or not settings['smtp_email'] or not settings['smtp_password']:
+        return jsonify({"error": "SMTP credentials missing in settings"}), 400
+    
+    smtp_settings = {
+        "email": settings['smtp_email'],
+        "password": settings['smtp_password']
+    }
+    
+    # Send a single test email to the user themselves
+    results = bulk_send(
+        smtp_settings, 
+        [{'email': settings['smtp_email'], 'name': 'User', 'company': 'Test', 'role': 'Admin'}], 
+        "SMTP Connection Test", 
+        "Hello! This is a test email to verify your SMTP settings in Smart Job Hunt.", 
+        None, 
+        is_test=True
+    )
+    
+    if results[0]['status'] == 'Success':
+        return jsonify({"message": "Connection Successful! Test email sent."})
+    else:
+        return jsonify({"error": f"Connection Failed: {results[0].get('error', 'Unknown Error')}"}), 500
 
 @app.route('/api/settings', methods=['GET', 'POST'])
 def handle_settings():
